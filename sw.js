@@ -12,7 +12,8 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
   const guardar = r => { if (r && r.ok) { const copia = r.clone(); caches.open(CACHE).then(c => c.put(req, copia)); } return r; };
   if (url.origin === location.origin) {
-    e.respondWith(fetch(req).then(guardar).catch(() => caches.match(req, { ignoreSearch: req.mode === 'navigate' }).then(r => r || caches.match('./'))));
+    // 'no-cache': sempre confere com o servidor (o GitHub manda o navegador guardar por 10 min)
+    e.respondWith(fetch(req, { cache: 'no-cache' }).then(guardar).catch(() => caches.match(req, { ignoreSearch: req.mode === 'navigate' }).then(r => r || caches.match('./'))));
     return;
   }
   e.respondWith(caches.match(req).then(r => r || fetch(req).then(guardar)));

@@ -195,7 +195,18 @@ h3.grupo small{font-weight:600;opacity:.7;font-size:13px}
 <script src="mundo.js?v=202611091527"></script>
 <script src="jogo.js?v=202611091527"></script>
 <script>
-if ('serviceWorker' in navigator && location.protocol === 'https:' && /github\.io$/.test(location.hostname)) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+if ('serviceWorker' in navigator && location.protocol === 'https:' && /github\.io$/.test(location.hostname)) {
+  // versão nova do jogo: salva e recarrega sozinho para mostrar as novidades
+  const tinha = !!navigator.serviceWorker.controller; let recarregou = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!tinha || recarregou) return; recarregou = true;
+    try { salvar(); } catch (e) { }
+    location.reload();
+  });
+  addEventListener('load', () => navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => { }); });
+  }).catch(() => {}));
+}
 </script>
 </body>
 </html>
