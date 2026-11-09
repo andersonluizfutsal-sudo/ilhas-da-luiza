@@ -1,5 +1,5 @@
-const CACHE = 'ilhas-luiza-202611081451';
-const BASE = ['./', 'index.html', 'dados.js?v=202611081451', 'arte.js?v=202611081451', 'mundo.js?v=202611081451', 'jogo.js?v=202611081451', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
+const CACHE = 'ilhas-luiza-202611091527';
+const BASE = ['./', 'index.html', 'dados.js?v=202611091527', 'arte.js?v=202611091527', 'mundo.js?v=202611091527', 'jogo.js?v=202611091527', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(BASE)).then(() => self.skipWaiting()));
 });

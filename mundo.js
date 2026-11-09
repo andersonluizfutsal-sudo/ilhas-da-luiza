@@ -35,12 +35,15 @@ function ruido(x, y, s) {
 }
 function npcPos(id) { const n = NPCS[id], il = ILHAS[n.ilha]; return { x: il.cx + n.dx, y: il.cy + n.dy }; }
 
+const ILHAS_ANTIGAS = 5; // as 5 primeiras ilhas: a natureza delas tem que sair igualzinha (o save guarda pelo índice)
 function gerarMundo() {
   // relevo das ilhas
   for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
     let best = -9, bi = -1;
     for (const il of ILHAS) {
       const d = Math.hypot(x - il.cx, y - il.cy) / il.r;
+      if (d > 1.45 && il.id >= ILHAS_ANTIGAS) continue; // longe demais: nunca vira terra
+
       const n = (ruido(x * 0.13, y * 0.13, il.id + 1) - 0.5) * 0.55 + (ruido(x * 0.35, y * 0.35, il.id + 9) - 0.5) * 0.2;
       const h = 1 - d + n;
       if (h > best) { best = h; bi = il.id; }
@@ -81,10 +84,9 @@ function gerarMundo() {
       }
     }
   }
-  // pontes entre a Campina e as outras ilhas
-  const c0 = ILHAS[0];
+  // pontes: as 4 primeiras saem da Campina; as novas saem da ilha anterior (il.de)
   for (let k = 1; k < ILHAS.length; k++) {
-    const il = ILHAS[k];
+    const il = ILHAS[k], pai = il.de != null ? il.de : 0, c0 = ILHAS[pai];
     const horiz = Math.abs(il.cx - c0.cx) > Math.abs(il.cy - c0.cy);
     const dist = Math.hypot(il.cx - c0.cx, il.cy - c0.cy);
     let primeiro = null, ultimoTerra = null;
@@ -99,7 +101,7 @@ function gerarMundo() {
           const j = idx(xx, yy);
           if (ter[j] === 0 || ter[j] === 4) { ter[j] = 4; pontDir[j] = horiz ? 0 : 1; pontIlha[j] = k; if (ilhaDe[j] < 0) ilhaDe[j] = -2; }
         }
-      } else if (ilhaDe[i] === 0) ultimoTerra = { x, y };
+      } else if (ilhaDe[i] === pai) ultimoTerra = { x, y };
     }
     if (primeiro) placas[k] = horiz ? { x: primeiro.x, y: primeiro.y - 1 } : { x: primeiro.x - 1, y: primeiro.y };
   }
@@ -118,36 +120,61 @@ function gerarMundo() {
     }
   }
   // natureza
-  const R = rng(2026);
+  // 1ª passada: só as ilhas antigas, com o mesmo sorteio de sempre (as pontes novas não contam aqui)
+  let antigas = true;
+  const R0 = rng(2026);
   const perto = (x, y) => {
     for (const il of ILHAS) if (Math.hypot(x - il.cx, y - il.cy) < (il.id === 0 ? 6.5 : 3.5)) return true;
     for (const id in NPCS) { const p = npcPos(id); if (Math.abs(x - p.x) <= 1.5 && Math.abs(y - p.y) <= 1.5) return true; }
-    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { if (!dentro(x + dx, y + dy)) continue; const t = ter[idx(x + dx, y + dy)]; if (t === 3 || t === 4) return true; }
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      if (!dentro(x + dx, y + dy)) continue; const j = idx(x + dx, y + dy), t = ter[j];
+      if ((t === 3 || t === 4) && !(antigas && pontIlha[j] >= ILHAS_ANTIGAS)) return true;
+    }
     return false;
   };
   const add = (tipo, x, y, sub) => { const k = natureza.length; const o = { k, tipo, sub, x, y, ilha: ilhaDe[idx(x, y)] }; natureza.push(o); natPorTile.set(idx(x, y), o); return o; };
-  for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
-    const i = idx(x, y), t = ter[i]; if (t !== 1 && t !== 2) continue;
-    const il = ILHAS[ilhaDe[i]]; const r = R();
-    if (perto(x, y)) continue;
-    if (t === 2) {
-      if (r < il.arvores) add('arvore', x, y, il.arv[Math.floor(R() * il.arv.length)]);
-      else if (r < il.arvores + 0.02) add('rocha', x, y, 0);
-    } else {
-      if (il.palmeiras) { if (r < 0.09) add('palmeira', x, y, 0); else if (r < 0.13) add('concha', x, y, 0); }
-      else if (!il.magica && r < 0.02) add('palmeira', x, y, 0);
-      else if (r < 0.035) add('rocha', x, y, 0);
+  const espalhar = (R, filtro) => {
+    for (let y = 1; y < MAP_H - 1; y++) for (let x = 1; x < MAP_W - 1; x++) {
+      const i = idx(x, y), t = ter[i]; if (t !== 1 && t !== 2) continue;
+      if (!filtro(ilhaDe[i])) continue;
+      const il = ILHAS[ilhaDe[i]]; const r = R();
+      if (perto(x, y)) continue;
+      if (t === 2) {
+        if (il.cidade && x % 4 === 0 && y % 4 === 1 && Math.hypot(x - il.cx, y - il.cy) < il.r * 0.75) { add('predio', x, y, Math.floor(hash2(x, y, 99) * 6)); continue; }
+        if (r < il.arvores) add('arvore', x, y, il.arv[Math.floor(R() * il.arv.length)]);
+        else if (r < il.arvores + (il.rochas || 0.02)) add('rocha', x, y, 0);
+      } else {
+        if (il.palmeiras) { if (r < 0.09) add('palmeira', x, y, 0); else if (r < 0.13) add('concha', x, y, 0); }
+        else if (!il.magica && r < 0.02) add('palmeira', x, y, 0);
+        else if (r < 0.035) add('rocha', x, y, 0);
+      }
+    }
+  };
+  const cristais = (R, il, qt) => {
+    let n = 0, tent = 0;
+    while (n < qt && tent++ < 5000) {
+      const x = Math.round(il.cx + (R() - 0.5) * il.r * 1.7), y = Math.round(il.cy + (R() - 0.5) * il.r * 1.7);
+      if (!dentro(x, y)) continue; const i = idx(x, y);
+      if (ter[i] !== 2 || ilhaDe[i] !== il.id || natPorTile.has(i) || perto(x, y)) continue;
+      add('cristal', x, y, n); n++;
+    }
+  };
+  espalhar(R0, id => id < ILHAS_ANTIGAS);
+  cristais(R0, ILHAS[4], 8); // cristais da Ilha Encantada
+  // o que ficou em cima das pontes novas some (sem mudar a numeração)
+  for (const o of natureza) {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dentro(o.x + dx, o.y + dy)) continue; const j = idx(o.x + dx, o.y + dy);
+      if ((ter[j] === 3 || ter[j] === 4) && pontIlha[j] >= ILHAS_ANTIGAS && o.tipo !== 'nada') { natPorTile.delete(idx(o.x, o.y)); o.tipo = 'nada'; }
     }
   }
-  // cristais da Ilha Encantada
-  const m = ILHAS[4]; let n = 0, tent = 0;
-  while (n < 8 && tent++ < 5000) {
-    const x = Math.round(m.cx + (R() - 0.5) * m.r * 1.7), y = Math.round(m.cy + (R() - 0.5) * m.r * 1.7);
-    if (!dentro(x, y)) continue; const i = idx(x, y);
-    if (ter[i] !== 2 || ilhaDe[i] !== 4 || natPorTile.has(i) || perto(x, y)) continue;
-    add('cristal', x, y, n); n++;
-  }
+  // 2ª passada: ilhas novas
+  antigas = false;
+  const R1 = rng(3030);
+  espalhar(R1, id => id >= ILHAS_ANTIGAS);
+  for (const il of ILHAS) if (il.id >= ILHAS_ANTIGAS && il.cristais) cristais(R1, il, il.cristais);
 }
+const TOTAL_CRISTAIS = () => natureza.filter(o => o.tipo === 'cristal').length;
 function atualizarPontes(fase) {
   for (let i = 0; i < NT; i++) if (pontIlha[i] > 0) ter[i] = fase >= pontIlha[i] ? 3 : 4;
   limparChunks();
@@ -187,7 +214,7 @@ const CH = 8;
 const chunks = new Map();
 let chunkRes = 2;
 function limparChunks() { chunks.clear(); }
-function corAreia(il) { return il === 4 ? ['#e7c3dc', '#f6dcee'] : ['#dcc086', '#f1dea2']; }
+function corAreia(il) { return (ILHAS[il] && ILHAS[il].areiaCor) || ['#dcc086', '#f1dea2']; }
 function pegarChunk(cx, cy) {
   const key = cx + ',' + cy;
   let c = chunks.get(key);
@@ -235,8 +262,8 @@ function desenharChunk(cx, cy) {
         g.strokeStyle = escurecer(il.grama, -0.18); g.lineWidth = 1.6; g.lineCap = 'round';
         const ox = X + 8 + hash2(x, y, 6) * 22, oy = Y + 10 + hash2(x, y, 7) * 22;
         g.beginPath(); g.moveTo(ox, oy); g.lineTo(ox - 2, oy - 5); g.moveTo(ox + 2, oy); g.lineTo(ox + 3, oy - 6); g.moveTo(ox + 4, oy); g.lineTo(ox + 7, oy - 4); g.stroke();
-      } else if (h < 0.43) {
-        const cs = il.magica ? ['#ffffff', '#ffe36a', '#7fe3ff'] : ['#ffffff', '#ffe36a', '#ff8fb8', '#c9a7ff'];
+      } else if (h < (il.muitasFlores ? 0.58 : 0.43)) {
+        const cs = il.flores || (il.magica ? ['#ffffff', '#ffe36a', '#7fe3ff'] : ['#ffffff', '#ffe36a', '#ff8fb8', '#c9a7ff']);
         const cor = cs[Math.floor(hash2(x, y, 8) * cs.length)];
         for (let k = 0; k < 3; k++) { const fx = X + 8 + hash2(x, y, 10 + k) * 24, fy = Y + 8 + hash2(x, y, 20 + k) * 24; circ(g, fx, fy, 2.2, cor); circ(g, fx, fy, 0.9, '#f5a623'); }
       } else if (h < 0.47 && il.magica) {

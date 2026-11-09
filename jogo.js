@@ -128,6 +128,7 @@ function recalcularBloqueio() {
   for (const o of natureza) {
     if (o.tipo === 'palmeira') bloq[idx(o.x, o.y)] = 1;
     else if ((o.tipo === 'arvore' || o.tipo === 'rocha') && presente(o)) bloq[idx(o.x, o.y)] = 1;
+    else if (o.tipo === 'predio') bloq[idx(o.x, o.y)] = 1;
   }
   for (const id in NPCS) { const p = npcPos(id); bloq[idx(p.x, p.y)] = 1; }
   for (const b of S.constru) if (b.tipo === 'cerca') {
@@ -464,7 +465,7 @@ function tocar(sx, sy) {
   }
   for (let yy = ty; yy <= ty + 2; yy++) for (let xx = tx - 1; xx <= tx + 1; xx++) {
     if (!dentro(xx, yy)) continue;
-    const o = natPorTile.get(idx(xx, yy)); if (!o) continue;
+    const o = natPorTile.get(idx(xx, yy)); if (!o || o.tipo === 'predio') continue;
     const X = o.x * T + T / 2, Yb = o.y * T + T;
     const alto = (o.tipo === 'arvore' && presente(o)) || o.tipo === 'palmeira' ? 68 : 34;
     if ((o.tipo === 'rocha' || o.tipo === 'concha' || o.tipo === 'cristal') && !presente(o)) continue;
@@ -538,7 +539,7 @@ function acaoNatureza(o) {
     if (!presente(o)) return;
     S.cristais[o.k] = 1; addInv('cristal', 1); somar('cristal', 1); ganharXP(15);
     coracoes(X, Y, 6, '✨'); flutuar(X, Y, '+1 💎', '#8a4fd8'); som('bebe');
-    toast('💎 Você achou um cristal mágico! (' + (S.st.cristal || 0) + ' de 8)');
+    toast('💎 Você achou um cristal mágico! (' + Object.keys(S.cristais).length + ' de ' + TOTAL_CRISTAIS() + ')');
   } else if (o.tipo === 'concha') {
     if (!presente(o)) return;
     addInv('concha', 1); somar('conchas', 1); ganharXP(2);
@@ -549,7 +550,7 @@ function acaoNatureza(o) {
 }
 function abrirBau() {
   if (!S.bau || S.bau.pego) return;
-  S.bau.pego = true;
+  S.bau.pego = true; somar('baus', 1);
   const moedas = 40 + 5 * S.nivel;
   S.moedas += moedas;
   const sementes = Object.keys(PLANTAS).filter(k => PLANTAS[k].nivel <= S.nivel);
@@ -578,12 +579,12 @@ function falarNpc(id) {
   const n = NPCS[id];
   const ilha = n.ilha;
   let fala;
-  if (S.fase >= 5) fala = 'Viva a Rainha ' + S.nome + '! Todas as ilhas estão felizes graças a você. 👑';
+  if (S.fase >= FIM) fala = 'Viva a Lenda das Ilhas, ' + S.nome + '! Todas as ilhas estão felizes graças a você. 👑';
   else if (ilha === S.fase) fala = FASES[ilha].fala.replace('{n}', S.nome);
   else if (ilha < S.fase) fala = sorteia(['Obrigada pela ajuda, ' + S.nome + '! 💕', 'Dica: animais felizes (com comida) têm bebês!', 'Dica: regue os canteiros para crescer mais rápido 💧', 'Dica: venda o que colher na 🎒 Mochila.', 'Dica: cavalos e pôneis deixam você correr mais rápido!', 'Dica: todo dia aparece um baú 🎁 escondido em alguma ilha!']);
   abrirPainel(n.nome, null, c => {
     c.append(h('div', { class: 'conversa' }, retratoNpc(n.look, n.fada), h('p', { class: 'fala' }, fala)));
-    if (ilha === S.fase && S.fase < 5) c.append(listaMissoes());
+    if (ilha === S.fase && S.fase < FIM) c.append(listaMissoes());
   });
 }
 
@@ -597,13 +598,13 @@ function listaMissoes() {
     box.append(h('div', { class: 'linha missao' + (ok ? ' feita' : '') }, h('div', { class: 'ic' }, ok ? '✅' : m.ic),
       h('div', { class: 'tx' }, h('b', null, m.t), h('small', null, ok ? 'Feito!' : m.dica), h('div', { class: 'prog' }, h('i', { style: 'width:' + Math.min(100, feito / meta * 100) + '%' })), h('small', null, Math.min(feito, meta) + ' de ' + meta))));
   });
-  box.append(h('p', { class: 'premio' }, '🎁 Prêmio: ' + f.premio + ' moedas' + (S.fase < 4 ? ' + ponte para a ' + ILHAS[S.fase + 1].nome : ' + Coroa de Rainha 👑')));
+  box.append(h('p', { class: 'premio' }, '🎁 Prêmio: ' + f.premio + ' moedas' + (S.fase === 4 ? ' + Coroa de Rainha 👑' : '') + (S.fase < FIM - 1 ? ' + ponte para a ' + ILHAS[S.fase + 1].nome : ' + título de Lenda das Ilhas 🌟')));
   return box;
 }
 function abrirMissoes(aba) {
   abrirPainel('📜 Missões', [['fase', '🏝️ Aventura'], ['dia', '☀️ Do dia'], ['trofeus', '🏆 Troféus']], (c, a) => {
     if (a === 'fase') {
-      if (S.fase >= 5) { c.append(h('p', { class: 'fala' }, '👑 Você completou todas as ilhas! Agora é a Rainha das Ilhas. Continue criando animais, construindo e fazendo os desafios do dia!')); return; }
+      if (S.fase >= FIM) { c.append(h('p', { class: 'fala' }, '🌟 Você completou as ' + ILHAS.length + ' ilhas! Agora é a Lenda das Ilhas. Continue criando animais, construindo e fazendo os desafios do dia!')); return; }
       const n = NPCS[FASES[S.fase].npc];
       c.append(h('p', { class: 'fala' }, ILHAS[S.fase].nome + ' — missões de ' + n.nome), listaMissoes());
     } else if (a === 'dia') {
@@ -636,7 +637,7 @@ function gerarDesafio() {
   S.desafio = { dia: hoje, itens: esc.map(d => ({ k: d.k, n: d.n[tier], base: S.st[d.k] || 0, feito: false })) };
 }
 function conferirMissoes() {
-  if (S.fase < 5) {
+  if (S.fase < FIM) {
     const f = FASES[S.fase];
     let todas = true;
     f.missoes.forEach((m, i) => {
@@ -657,9 +658,13 @@ function completarFase() {
   S.moedas += f.premio; ganharXP(50); hudSujo = true;
   S.fase++;
   atualizarPontes(S.fase); recalcularBloqueio();
-  if (S.fase >= 5) {
+  if (S.fase >= FIM) {
+    if (!S.acc.includes('asas')) S.acc.push('asas');
+    festa({ ic: '🌟', tit: 'Você é a Lenda das Ilhas!', txt: 'Uau, ' + S.nome + '! Você passou por todas as ' + ILHAS.length + ' ilhas, fez amizade com bichos do mundo inteiro e construiu o Palácio das Estrelas. Ganhou ' + f.premio + ' moedas e as Asas de Fada!', ok: 'Que demais! 🌟' });
+  } else if (S.fase === 5) {
     if (!S.acc.includes('coroa')) S.acc.push('coroa');
     festa({ ic: '👑', tit: 'Você é a Rainha das Ilhas!', txt: 'Incrível, ' + S.nome + '! Você ajudou todos os amigos, cuidou dos animais e construiu o castelo. Ganhou ' + f.premio + ' moedas e a Coroa de Rainha!', ok: 'Usar a coroa 👑', onOk: () => { S.look.acc = 'coroa'; desenharAvatar(); } });
+    festa({ ic: '🌉', tit: 'Uma ponte nova apareceu!', txt: 'Lá na Praia dos Coqueiros surgiu uma ponte para o ' + ILHAS[5].nome + '. Mais ' + (ILHAS.length - 5) + ' ilhas cheias de bichos e amigos novos esperam por você!' });
   } else {
     const prox = ILHAS[S.fase];
     festa({ ic: '🌉', tit: 'Fase completa!', txt: n.nome + ' te deu ' + f.premio + ' moedas e consertou a ponte para a ' + prox.nome + '! Atravesse e fale com ' + NPCS[FASES[S.fase].npc].nome + '.' });
@@ -991,7 +996,7 @@ function puxar() {
   if (pesca.fase !== 'mordeu') { esperarPeixe(); return; }
   clearTimeout(pesca.timer);
   pesca.fase = 'pegou';
-  const praia = pesca.ilha === 2;
+  const praia = !!(ILHAS[pesca.ilha] && ILHAS[pesca.ilha].palmeiras);
   const r = Math.random();
   let item;
   if (r < 0.05) { const n = 30 + Math.floor(Math.random() * 40); S.moedas += n; hudSujo = true; pescaMsg('Você pescou um baú de tesouro! +' + n + ' 🪙'); boia('pegou'); som('moeda'); }
@@ -1029,7 +1034,7 @@ function abrirLoja(aba) {
           h('div', { class: 'ds' }, tranc ? '🔒 Nível ' + esp.nivel : casa ? 'Vai morar na ' + tc.nome : 'Precisa de ' + tc.ic + ' ' + tc.nome),
           botao('🪙 ' + esp.preco, () => comprarAnimal(sp), 'verde', tranc || S.moedas < esp.preco)));
       }
-      c.append(h('p', { class: 'dica-p' }, '🦄 Unicórnios não são vendidos... dizem que vivem na Ilha Encantada!'));
+      c.append(h('p', { class: 'dica-p' }, '🦄 Unicórnios e 🐉 dragões não são vendidos... dizem que vivem nas ilhas mágicas!'));
     } else if (a === 'sementes') {
       for (const k in PLANTAS) {
         const p = PLANTAS[k], tranc = p.nivel > S.nivel;
@@ -1235,7 +1240,7 @@ function atualizarHud() {
 }
 function atualizarDica() {
   let t;
-  if (S.fase >= 5) t = '👑 Rainha das Ilhas! Faça os desafios do dia ☀️';
+  if (S.fase >= FIM) t = '🌟 Lenda das Ilhas! Faça os desafios do dia ☀️';
   else {
     const f = FASES[S.fase];
     const m = f.missoes.find(m => { const [a, b] = m.c(S); return a < b; });
@@ -1334,6 +1339,7 @@ function desenhar() {
     else if (o.tipo === 'palmeira') lista.push([Y, () => desenharPalmeira(g, X, Y, tempo, presente(o))]);
     else if (o.tipo === 'cristal') { if (presente(o)) lista.push([Y, () => desenharCristal(g, X, Y, tempo)]); }
     else if (o.tipo === 'concha') { if (presente(o)) lista.push([Y - 10, () => emoji(g, '🐚', X, Y - 8, 18)]); }
+    else if (o.tipo === 'predio') lista.push([Y, () => desenharPredio(g, X, Y, o.sub, nt)]);
   }
   for (const b of S.constru) {
     const d = CONSTRU[b.tipo]; if (!visivel(b.x, b.y, 4)) continue;
@@ -1351,7 +1357,7 @@ function desenhar() {
       const voo = n.fada ? -8 + Math.sin(tempo * 2) * 3 : 0;
       if (n.fada) { sombra(g, X, Y, 9, 3, 0.15); const gr = g.createRadialGradient(X, Y - 30 + voo, 4, X, Y - 30 + voo, 36); gr.addColorStop(0, 'rgba(255,220,255,.6)'); gr.addColorStop(1, 'rgba(255,220,255,0)'); g.fillStyle = gr; g.beginPath(); g.arc(X, Y - 30 + voo, 36, 0, 7); g.fill(); }
       desenharPessoa(g, X, Y + voo, n.look, { t: tempo + p.x, dir: P.x < X ? -1 : 1, fada: n.fada });
-      if (n.ilha === S.fase && S.fase < 5) { const pl = Math.abs(Math.sin(tempo * 3)) * 5; circ(g, X, Y - 72 - pl + voo, 10, '#ffcf3f'); g.fillStyle = '#5a3a00'; g.font = 'bold 15px "Baloo 2",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('!', X, Y - 71 - pl + voo); }
+      if (n.ilha === S.fase && S.fase < FIM) { const pl = Math.abs(Math.sin(tempo * 3)) * 5; circ(g, X, Y - 72 - pl + voo, 10, '#ffcf3f'); g.fillStyle = '#5a3a00'; g.font = 'bold 15px "Baloo 2",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('!', X, Y - 71 - pl + voo); }
     }]);
   }
   for (const k in placas) { if (S.fase >= +k) continue; const p = placas[k]; if (!visivel(p.x, p.y, 1)) continue; lista.push([p.y * T + T * 0.8, () => desenharPlaca(g, p.x * T + T / 2, p.y * T + T * 0.8)]); }
@@ -1516,10 +1522,16 @@ function iniciarJogo(novo) {
   desenharAvatar(); atualizarHud(); gerarDesafio(); atualizarDica();
   jogando = true;
   const hoje = diaHoje();
+  const jaJogava = S.intro;
   if (!S.intro) {
     S.intro = true;
     festa({ ic: '🏝️', tit: 'Bem-vinda, ' + S.nome + '!', txt: 'Estas são as Ilhas da Luiza! Toque no chão para andar e toque nas coisas para usar. A Vovó Rosa está te esperando ali pertinho. Toque nela! 👵', ok: 'Vamos lá!', som: 'bebe' });
   }
+  if (!S.vistoIlhasNovas && jaJogava) {
+    S.vistoIlhasNovas = true;
+    festa({ ic: '🗺️', tit: 'O mundo ficou maior!', txt: 'Apareceram ' + (ILHAS.length - 5) + ' ilhas novas: abelhas, pinguins, girafas, pandas, cangurus, golfinhos e até dragões! ' + (S.fase >= 5 ? 'Uma ponte nova já está aberta na Praia dos Coqueiros. Vá falar com a ' + NPCS[FASES[S.fase] ? FASES[S.fase].npc : 'estela'].nome + '!' : 'Elas ficam depois da Ilha Encantada. Continue a aventura para chegar lá!'), ok: 'Oba! 🎉' });
+  }
+  if (!jaJogava) S.vistoIlhasNovas = true;
   if (S.diaPresente !== hoje) {
     S.diaPresente = hoje;
     const moedas = 30 + 10 * S.nivel;
@@ -1533,7 +1545,7 @@ function iniciarJogo(novo) {
 function sortearBau() {
   const hoje = diaHoje();
   for (let t = 0; t < 400; t++) {
-    const il = ILHAS[Math.floor(Math.random() * (Math.min(S.fase, 4) + 1))];
+    const il = ILHAS[Math.floor(Math.random() * (Math.min(S.fase, ILHAS.length - 1) + 1))];
     const x = Math.round(il.cx + (Math.random() * 2 - 1) * il.r * 0.85), y = Math.round(il.cy + (Math.random() * 2 - 1) * il.r * 0.85);
     if (!dentro(x, y)) continue; const i = idx(x, y);
     if (bloq[i] || ter[i] === 0 || ter[i] > 2 || natPorTile.has(i) || mapaConstru.has(i) || ilhaDe[i] > S.fase) continue;
